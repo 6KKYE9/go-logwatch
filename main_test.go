@@ -4,12 +4,12 @@ import "testing"
 
 func TestLevelOf(t *testing.T) {
 	cases := map[string]string{
-		"[ERROR] boom":        "ERROR",
-		"fatal: down":        "ERROR",
-		"warning: low":       "WARN",
-		"INFO starting":      "INFO",
-		"debug trace":        "DEBUG",
-		"just some text":     "OTHER",
+		"[ERROR] boom":    "ERROR",
+		"fatal: down":    "ERROR",
+		"warning: low":   "WARN",
+		"INFO starting":  "INFO",
+		"debug trace":    "DEBUG",
+		"just some text": "OTHER",
 	}
 	for line, want := range cases {
 		if got := levelOf(line); got != want {
@@ -28,7 +28,6 @@ func TestLevelStats(t *testing.T) {
 
 func TestFilterLines(t *testing.T) {
 	lines := []string{"abc", "def", "aXX", "ghi"}
-	// 保留命中 a 的
 	got, err := filterLines(lines, "a", true)
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +35,6 @@ func TestFilterLines(t *testing.T) {
 	if len(got) != 2 || got[0] != "abc" || got[1] != "aXX" {
 		t.Fatalf("keep 模式不符: %#v", got)
 	}
-	// 反向只留没命中的
 	got, _ = filterLines(lines, "a", false)
 	if len(got) != 2 || got[0] != "def" {
 		t.Fatalf("反向模式不符: %#v", got)
@@ -46,5 +44,16 @@ func TestFilterLines(t *testing.T) {
 func TestFilterLinesBadRegex(t *testing.T) {
 	if _, err := filterLines([]string{"x"}, "(", true); err == nil {
 		t.Fatal("非法正则应报错")
+	}
+}
+
+func TestTopWords(t *testing.T) {
+	lines := []string{"error foo bar", "error foo foo", "bar baz"}
+	top := topWords(lines, 2)
+	if len(top) != 2 {
+		t.Fatalf("top 数量不符: %#v", top)
+	}
+	if top[0].Word != "foo" || top[0].Count != 3 {
+		t.Fatalf("高频词应为 foo(3)，实际 %#v", top)
 	}
 }

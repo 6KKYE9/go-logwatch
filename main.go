@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -61,6 +62,48 @@ func filterLines(lines []string, pattern string, keep bool) ([]string, error) {
 	return out, nil
 }
 
+// 统计每行里出现频次最高的词（按非空白 token），top N
+func topWords(lines []string, n int) []struct {
+	Word  string
+	Count int
+} {
+	counts := map[string]int{}
+	for _, l := range lines {
+		for _, w := range strings.Fields(l) {
+			w = strings.Trim(strings.ToLower(w), ".,:;\"'()[]{}")
+			if w == "" {
+				continue
+			}
+			counts[w]++
+		}
+	}
+	type kv struct {
+		Word  string
+		Count int
+	}
+	pairs := make([]kv, 0, len(counts))
+	for w, c := range counts {
+		pairs = append(pairs, kv{w, c})
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i].Count == pairs[j].Count {
+			return pairs[i].Word < pairs[j].Word
+		}
+		return pairs[i].Count > pairs[j].Count
+	})
+	if n > 0 && n < len(pairs) {
+		pairs = pairs[:n]
+	}
+	res := make([]struct {
+		Word  string
+		Count int
+	}, len(pairs))
+	for i, p := range pairs {
+		res[i] = p
+	}
+	return res
+}
+
 func printStats(stats map[string]int) {
 	order := []string{"ERROR", "WARN", "INFO", "DEBUG", "OTHER"}
 	for _, k := range order {
@@ -111,6 +154,8 @@ func main() {
 	pattern := flag.String("pattern", "", "按正则过滤行")
 	keep := flag.Bool("keep", true, "pattern 模式下保留命中的（false 则反向）")
 	path := flag.String("f", "", "日志文件路径，不给就从标准输入读")
+	topN := flag.Int("top", 0, "统计出现最多的 N 个词（0 表示不统计）")
+	jsonOut := flag.Bool("json", false, "用 JSON 输出统计结果")
 	flag.Parse()
 
 	lines, err := readLines(*path)
@@ -119,6 +164,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 关键词过滤优先于统计
 	if *pattern != "" {
 		filtered, err := filterLines(lines, *pattern, *keep)
 		if err != nil {
@@ -132,7 +178,20 @@ func main() {
 	}
 
 	if *statsMode {
-		printStats(levelStats(lines))
+		stats := levelStats(lines)
+		if *jsonOut {
+			b, _ := json.MarshalIndent(stats, "", "  ")
+			fmt.Println(string(b))
+		} else {
+			printStats(stats)
+		}
+		return
+	}
+
+	if *topN > 0 {
+		for _, p := range topWords(lines, *topN) {
+			fmt.Printf("%-20s %d\n", p.Word, p.Count)
+		}
 		return
 	}
 
