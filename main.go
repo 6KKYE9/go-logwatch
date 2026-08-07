@@ -142,7 +142,7 @@ func readLines(path string) ([]string, error) {
 	} else {
 		sc = bufio.NewScanner(os.Stdin)
 	}
-	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	sc.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for sc.Scan() {
 		lines = append(lines, sc.Text())
 	}
@@ -156,12 +156,26 @@ func main() {
 	path := flag.String("f", "", "日志文件路径，不给就从标准输入读")
 	topN := flag.Int("top", 0, "统计出现最多的 N 个词（0 表示不统计）")
 	jsonOut := flag.Bool("json", false, "用 JSON 输出统计结果")
+	level := flag.String("level", "", "只看指定级别的行，比如 -level ERROR（大小写不敏感）")
+	context := flag.Int("context", 0, "命中行（pattern 或 level）前后各多打 N 行上下文")
 	flag.Parse()
 
 	lines, err := readLines(*path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "读日志失败: %v\n", err)
 		os.Exit(1)
+	}
+
+	// level 过滤：先按级别筛出要保留的行下标
+	var keepIdx map[int]bool
+	if *level != "" {
+		want := strings.ToUpper(*level)
+		keepIdx = map[int]bool{}
+		for i, l := range lines {
+			if strings.Contains(strings.ToUpper(levelOf(l)), want) || strings.Contains(strings.ToUpper(l), want) {
+				keepIdx[i] = true
+			}
+		}
 	}
 
 	// 关键词过滤优先于统计
@@ -171,7 +185,26 @@ func main() {
 			fmt.Fprintf(os.Stderr, "正则不对: %v\n", err)
 			os.Exit(1)
 		}
+		if *context > 0 {
+			filtered = withContext(lines, filtered, *context)
+		}
 		for _, l := range filtered {
+			fmt.Println(l)
+		}
+		return
+	}
+
+	if *level != "" {
+		var out []string
+		for i, l := range lines {
+			if keepIdx[i] {
+				out = append(out, l)
+			}
+		}
+		if *context > 0 {
+			out = withContext(lines, out, *context)
+		}
+		for _, l := range out {
 			fmt.Println(l)
 		}
 		return
@@ -198,4 +231,40 @@ func main() {
 	for _, l := range lines {
 		fmt.Println(l)
 	}
+}
+
+// withContext 给命中的行附加前后各 n 行上下文，按原顺序去重输出
+func withContext(all, hits []string, n int) []string {
+	// 按内容匹配位置：同一行内容可能出现多次，要全部标出来
+	hitIdx := map[int]bool{}
+	for i, l := range all {
+		for _, h := range hits {
+			if l == h {
+				hitIdx[i] = true
+				break
+			}
+		}
+	}
+	seen := map[int]bool{}
+	var out []string
+	for i := range all {
+		if !hitIdx[i] {
+			continue
+		}
+		lo := i - n
+		if lo < 0 {
+			lo = 0
+		}
+		hi := i + n
+		if hi >= len(all) {
+			hi = len(all) - 1
+		}
+		for j := lo; j <= hi; j++ {
+			if !seen[j] {
+				seen[j] = true
+				out = append(out, all[j])
+			}
+		}
+	}
+	return out
 }
